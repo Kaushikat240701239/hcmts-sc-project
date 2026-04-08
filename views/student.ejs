@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Student Dashboard</title>
+
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
+
+<style>
+body { margin:0; font-family:'Poppins'; background:#f4f6f9; }
+
+/* Sidebar */
+.sidebar {
+    width:240px; height:100vh; position:fixed;
+    background: linear-gradient(180deg,#0d2c54,#0b1f3a);
+    color:white; padding-top:20px;
+}
+.sidebar a {
+    display:block; padding:12px 20px;
+    color:#cfd8dc; text-decoration:none;
+}
+.sidebar a:hover { background:#1c3d6e; }
+
+/* Main */
+.main { margin-left:240px; }
+
+/* Topbar */
+.topbar {
+    background:#1f3c64; color:white;
+    padding:10px 20px;
+    display:flex; justify-content:space-between;
+}
+
+/* Cards */
+.card-box {
+    border-radius:10px;
+    padding:20px; color:white;
+}
+.blue{background:#4e73df;}
+.orange{background:#f6c23e;color:black;}
+.green{background:#1cc88a;}
+.lightblue{background:#36b9cc;}
+
+/* Section */
+.section {
+    background:white;
+    padding:20px;
+    border-radius:10px;
+    margin-top:20px;
+}
+
+/* Status */
+.badge-pending {background:#f6c23e;padding:5px 10px;border-radius:5px;}
+.badge-progress {background:#36b9cc;color:white;padding:5px 10px;border-radius:5px;}
+.badge-resolved {background:#1cc88a;color:white;padding:5px 10px;border-radius:5px;}
+</style>
+</head>
+
+<body>
+
+<div class="sidebar">
+    <h4 class="text-center">🏫 HCMTS</h4>
+    <a href="/dashboard/student">Dashboard</a>
+    <a href="#" onclick="logout()">Logout</a>
+</div>
+
+<div class="main">
+
+<div class="topbar">
+    <div>Hostel Complaint System</div>
+    <div class="d-flex align-items-center">
+        <!-- Notifications Toggle -->
+        <div class="dropdown me-3">
+            <button class="btn btn-outline-light btn-sm position-relative" type="button" data-bs-toggle="dropdown" onclick="markAllNotificationsRead()">
+                <i class="fa fa-bell"></i>
+                <span id="notifBadge" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" style="display:none;">0</span>
+            </button>
+            <ul id="notifList" class="dropdown-menu dropdown-menu-end p-2" style="width: 300px; max-height: 400px; overflow-y: auto;">
+                <li><h6 class="dropdown-header">Notifications</h6></li>
+                <li><hr class="dropdown-divider"></li>
+                <div id="notifItems">
+                    <li class="text-center p-3 text-muted">No notifications</li>
+                </div>
+            </ul>
+        </div>
+        
+        <span id="userName" class="me-2">Student</span> 
+        <button class="btn btn-light btn-sm" onclick="logout()">Logout</button>
+    </div>
+</div>
+
+<div class="container mt-4">
+
+<h4>Welcome, <span id="welcomeName">Student</span></h4>
+
+<!-- DASHBOARD CARDS -->
+<div class="row mt-3">
+    <div class="col-md-3"><div class="card-box blue"><h6>Total</h6><h3 id="totalCount">0</h3></div></div>
+    <div class="col-md-3"><div class="card-box orange"><h6>Pending</h6><h3 id="pendingCount">0</h3></div></div>
+    <div class="col-md-3"><div class="card-box lightblue"><h6>In Progress</h6><h3 id="progressCount">0</h3></div></div>
+    <div class="col-md-3"><div class="card-box green"><h6>Resolved</h6><h3 id="resolvedCount">0</h3></div></div>
+</div>
+
+<!-- REGISTER COMPLAINT -->
+<div class="section">
+    <h5><i class="fa fa-plus"></i> Register Complaint</h5>
+
+    <form id="complaintForm">
+        <div class="row">
+            <div class="col-md-4">
+                <input class="form-control" name="block" placeholder="Block (A/B/C)" required>
+            </div>
+
+            <div class="col-md-4">
+                <select class="form-control" name="complaint_type">
+                    <option>Electrical</option>
+                    <option>Water</option>
+                    <option>WiFi</option>
+                    <option>Furniture</option>
+                </select>
+            </div>
+
+            <div class="col-md-4">
+                <input class="form-control" name="room_no_no" placeholder="Room No" required>
+            </div>
+        </div>
+
+        <textarea class="form-control mt-3" name="description" placeholder="Describe your issue..." required></textarea>
+
+        <button type="submit" class="btn btn-primary mt-3">Submit Complaint</button>
+    </form>
+</div>
+
+<!-- MY COMPLAINTS ONLY -->
+<div class="section">
+    <h5><i class="fa fa-list"></i> My Complaints</h5>
+
+    <table class="table mt-3">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Date</th>
+                <th>Block</th>
+                <th>Room</th>
+                <th>Issue</th>
+                <th>Description</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+        <tbody id="complaintList"></tbody>
+    </table>
+</div>
+
+</div>
+</div>
+
+<script>
+const token = localStorage.getItem('token');
+const user = JSON.parse(localStorage.getItem('user'));
+
+if(!token || user.role !== 'student') {
+    window.location.href = '/';
+}
+
+document.getElementById('userName').innerText = user.username;
+document.getElementById('welcomeName').innerText = user.username;
+
+function logout() {
+    localStorage.clear();
+    window.location.href = '/';
+}
+
+const loadComplaints = async () => {
+    try {
+        const res = await fetch('/api/complaints', {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await res.json();
+        if(data.success) {
+            renderComplaints(data.complaints);
+        }
+    } catch (err) { console.error(err); }
+};
+
+const renderComplaints = (complaints) => {
+    const list = document.getElementById('complaintList');
+    list.innerHTML = '';
+    
+    let stats = { total: 0, pending: 0, progress: 0, resolved: 0 };
+    
+    complaints.forEach(c => {
+        stats.total++;
+        if(c.status === 'Pending') stats.pending++;
+        else if(c.status === 'In Progress') stats.progress++;
+        else if(c.status === 'Resolved') stats.resolved++;
+
+        const date = new Date(c.createdAt).toLocaleDateString();
+        const snippet = c.description.substring(0, 30) + (c.description.length > 30 ? '...' : '');
+        list.innerHTML += `
+            <tr>
+                <td>${c.id}</td>
+                <td>${date}</td>
+                <td>${c.block}</td>
+                <td>${c.room_no_no}</td>
+                <td>${c.complaint_type}</td>
+                <td><small>${snippet}</small></td>
+                <td><span class="badge-${c.status.toLowerCase().replace(' ', '')}">${c.status}</span></td>
+            </tr>
+        `;
+    });
+
+    document.getElementById('totalCount').innerText = stats.total;
+    document.getElementById('pendingCount').innerText = stats.pending;
+    document.getElementById('progressCount').innerText = stats.progress;
+    document.getElementById('resolvedCount').innerText = stats.resolved;
+};
+
+document.getElementById('complaintForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const formData = new FormData(e.target);
+    const data = Object.fromEntries(formData.entries());
+
+    try {
+        const res = await fetch('/api/complaints', {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify(data)
+        });
+
+        const result = await res.json();
+        if(result.success) {
+            alert('Complaint submitted successfully!');
+            e.target.reset();
+            loadComplaints();
+        } else {
+            alert(result.message);
+        }
+    } catch (err) { console.error(err); }
+});
+
+const loadNotifications = async () => {
+    try {
+        const res = await fetch('/api/notifications', {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await res.json();
+        if(data.success) {
+            const items = document.getElementById('notifItems');
+            const unread = data.notifications.filter(n => !n.is_read).length;
+            
+            if(unread > 0) {
+                document.getElementById('notifBadge').innerText = unread;
+                document.getElementById('notifBadge').style.display = 'block';
+            } else {
+                document.getElementById('notifBadge').style.display = 'none';
+            }
+
+            if(data.notifications.length === 0) {
+                items.innerHTML = '<li class="text-center p-3 text-muted">No notifications</li>';
+                return;
+            }
+
+            items.innerHTML = data.notifications.map(n => `
+                <li class="p-2 border-bottom ${!n.is_read ? 'bg-light font-weight-bold' : ''}">
+                    <div style="font-size: 0.85rem;">${n.message}</div>
+                    <small class="text-muted" style="font-size: 0.7rem;">${new Date(n.createdAt).toLocaleString()}</small>
+                </li>
+            `).join('');
+        }
+    } catch (err) { console.error(err); }
+};
+
+const markAllNotificationsRead = async () => {
+    // Basic implementation: mark all visible as read
+    try {
+        const res = await fetch('/api/notifications', {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await res.json();
+        if(data.success) {
+            for(let n of data.notifications) {
+                if(!n.is_read) {
+                    await fetch(`/api/notifications/${n.id}`, {
+                        method: 'PUT',
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    });
+                }
+            }
+            setTimeout(loadNotifications, 500);
+        }
+    } catch (err) { console.error(err); }
+};
+
+loadComplaints();
+loadNotifications();
+// Refresh notifications every 2 mins
+setInterval(loadNotifications, 120000);
+</script>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+</body>
+</html>

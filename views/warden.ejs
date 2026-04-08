@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Warden Dashboard</title>
+
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
+
+<style>
+body { margin:0; font-family:'Poppins'; background:#f4f6f9; }
+
+/* Sidebar */
+.sidebar {
+    width:240px; height:100vh; position:fixed;
+    background:#0d2c54; color:white;
+}
+.sidebar h4 { padding:20px; }
+.sidebar a {
+    display:block; padding:12px 20px;
+    color:#ddd; text-decoration:none; cursor:pointer;
+}
+.sidebar a:hover { background:#1c3d6e; }
+
+/* Main */
+.main { margin-left:240px; padding:20px; }
+
+/* Cards */
+.card-box { padding:20px; border-radius:10px; color:white; }
+.blue{background:#4e73df;}
+.orange{background:#f6c23e;color:black;}
+.lightblue{background:#36b9cc;}
+.green{background:#1cc88a;}
+.red{background:#e74a3b;}
+</style>
+</head>
+
+<body>
+
+<!-- SIDEBAR -->
+<div class="sidebar">
+<h4>HCMTS</h4>
+<a onclick="showSection('dashboard')">Dashboard</a>
+<a onclick="showSection('all')">View Complaints</a>
+<a onclick="logout()">Logout</a>
+</div>
+
+<!-- MAIN -->
+<div class="main">
+
+<!-- HEADER -->
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h3 id="welcomeText">Welcome Warden</h3>
+    
+    <div class="d-flex align-items-center">
+        <!-- Notifications Toggle -->
+        <div class="dropdown me-3">
+            <button class="btn btn-outline-dark btn-sm position-relative" type="button" data-bs-toggle="dropdown" onclick="markAllNotificationsRead()">
+                <i class="fa fa-bell"></i>
+                <span id="notifBadge" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" style="display:none;">0</span>
+            </button>
+            <ul class="dropdown-menu dropdown-menu-end p-2" style="width: 300px; max-height: 400px; overflow-y: auto;">
+                <li><h6 class="dropdown-header">Notifications</h6></li>
+                <li><hr class="dropdown-divider"></li>
+                <div id="notifItems">
+                    <li class="text-center p-3 text-muted">No notifications</li>
+                </div>
+            </ul>
+        </div>
+
+        <span class="badge bg-dark me-2" id="wardenName"></span>
+        <button class="btn btn-sm btn-danger" onclick="logout()">Logout</button>
+    </div>
+</div>
+
+<!-- DASHBOARD -->
+<div id="dashboard">
+<h4>Dashboard Overview</h4>
+
+<div class="row mt-3">
+<div class="col-md-2"><div class="card-box blue"><h6>Total</h6><h2 id="total">0</h2></div></div>
+<div class="col-md-2"><div class="card-box orange"><h6>Pending</h6><h2 id="pending">0</h2></div></div>
+<div class="col-md-2"><div class="card-box lightblue"><h6>In Progress</h6><h2 id="progress">0</h2></div></div>
+<div class="col-md-2"><div class="card-box green"><h6>Resolved</h6><h2 id="resolved">0</h2></div></div>
+<div class="col-md-2"><div class="card-box red"><h6>Rejected</h6><h2 id="rejected">0</h2></div></div>
+</div>
+</div>
+
+<!-- ALL COMPLAINTS -->
+<div id="all" style="display:none;">
+    <div class="d-flex justify-content-between align-items-center">
+        <h4>All Complaints</h4>
+        <div>
+            <a id="csvDownload" href="#" class="btn btn-success btn-sm"><i class="fa fa-file-csv"></i> Download CSV</a>
+            <a id="pdfDownload" href="#" class="btn btn-danger btn-sm ms-2"><i class="fa fa-file-pdf"></i> Download PDF</a>
+        </div>
+    </div>
+
+<table class="table table-bordered mt-3">
+<thead>
+<tr>
+<th>ID</th>
+<th>Date</th>
+<th>Student</th>
+<th>Block</th>
+<th>Room</th>
+<th>Issue</th>
+<th>Description</th>
+<th>Status</th>
+<th>Priority</th>
+<th>Staff</th>
+<th>Action</th>
+</tr>
+</thead>
+
+<tbody id="tableBody"></tbody>
+</table>
+</div>
+
+</div>
+
+<!-- REJECT MODAL -->
+<div class="modal fade" id="rejectModal">
+<div class="modal-dialog">
+<div class="modal-content">
+
+<div class="modal-header">
+<h5>Reject Complaint</h5>
+<button class="btn-close" data-bs-dismiss="modal"></button>
+</div>
+
+<div class="modal-body">
+<textarea id="rejectReason" class="form-control" placeholder="Enter reason"></textarea>
+</div>
+
+<div class="modal-footer">
+<button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+<button class="btn btn-danger" onclick="confirmReject()">Reject</button>
+</div>
+
+</div>
+</div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+<script>
+const token = localStorage.getItem('token');
+const user = JSON.parse(localStorage.getItem('user'));
+
+if(!token || user.role !== 'warden') { window.location.href = '/'; }
+
+document.getElementById('wardenName').innerText = user.username;
+document.getElementById('welcomeText').innerText = `Welcome ${user.username}, Warden`;
+document.getElementById('csvDownload').href = `/api/reports/csv?token=${token}`;
+document.getElementById('pdfDownload').href = `/api/reports/pdf?token=${token}`;
+
+let currentComplaints = [];
+let staffOptions = [];
+let rejectId = null;
+
+function logout() { localStorage.clear(); window.location.href = '/'; }
+
+function showSection(id) {
+    document.querySelectorAll("#dashboard,#all").forEach(d => d.style.display = "none");
+    document.getElementById(id).style.display = "block";
+    if(id === 'all') loadAll();
+}
+
+async function loadStaff() {
+    const res = await fetch('/api/users/role/staff', { headers: { 'Authorization': `Bearer ${token}` } });
+    const data = await res.json();
+    if(data.success) { staffOptions = data.users; }
+}
+
+async function loadAll() {
+    await loadStaff();
+    const res = await fetch('/api/complaints', { headers: { 'Authorization': `Bearer ${token}` } });
+    const data = await res.json();
+    if(data.success) {
+        currentComplaints = data.complaints;
+        renderTable();
+        updateCounts();
+    }
+}
+
+function updateCounts() {
+    document.getElementById('total').innerText = currentComplaints.length;
+    document.getElementById('pending').innerText = currentComplaints.filter(c => c.status === 'Pending').length;
+    document.getElementById('progress').innerText = currentComplaints.filter(c => c.status === 'In Progress').length;
+    document.getElementById('resolved').innerText = currentComplaints.filter(c => c.status === 'Resolved').length;
+    document.getElementById('rejected').innerText = currentComplaints.filter(c => c.status === 'Rejected').length;
+}
+
+function renderTable() {
+    const body = document.getElementById("tableBody");
+    body.innerHTML = "";
+
+    currentComplaints.forEach(c => {
+        let staffOptionsHtml = staffOptions.map(s => 
+            `<option value="${s.id}" ${c.staff_id === s.id ? 'selected' : ''}>${s.name || s.username}</option>`
+        ).join("");
+
+        const date = new Date(c.createdAt).toLocaleDateString();
+        const snippet = c.description.substring(0, 30) + (c.description.length > 30 ? '...' : '');
+
+        body.innerHTML += `
+        <tr>
+            <td>${c.id}</td>
+            <td>${date}</td>
+            <td>${c.Student ? c.Student.name || c.Student.username : 'Unknown'}</td>
+            <td>${c.block}</td>
+            <td>${c.room_no_no}</td>
+            <td>${c.complaint_type}</td>
+            <td><small>${snippet}</small></td>
+            <td>
+                <select class="form-select form-select-sm" onchange="updateStatus(${c.id}, this.value)">
+                    <option value="Pending" ${c.status === 'Pending' ? 'selected' : ''}>Pending</option>
+                    <option value="In Progress" ${c.status === 'In Progress' ? 'selected' : ''}>In Progress</option>
+                    <option value="Resolved" ${c.status === 'Resolved' ? 'selected' : ''}>Resolved</option>
+                    <option value="Rejected" ${c.status === 'Rejected' ? 'selected' : ''}>Rejected</option>
+                </select>
+            </td>
+            <td>
+                <select class="form-select form-select-sm" onchange="updatePriority(${c.id}, this.value)">
+                    <option value="Low" ${c.priority === 'Low' ? 'selected' : ''}>Low</option>
+                    <option value="Medium" ${c.priority === 'Medium' ? 'selected' : ''}>Medium</option>
+                    <option value="High" ${c.priority === 'High' ? 'selected' : ''}>High</option>
+                </select>
+            </td>
+            <td>
+                <select class="form-select form-select-sm" onchange="assignStaff(${c.id}, this.value)">
+                    <option value="">Assign Staff</option>
+                    ${staffOptionsHtml}
+                </select>
+            </td>
+            <td>
+                <button class="btn btn-sm btn-danger" onclick="openRejectModal(${c.id})">Reject</button>
+            </td>
+        </tr>`;
+    });
+}
+
+async function updateStatus(id, newStatus) {
+    if(newStatus === 'Rejected') {
+        openRejectModal(id);
+        return;
+    }
+    const res = await fetch(`/api/complaints/${id}/status`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ status: newStatus })
+    });
+    if((await res.json()).success) loadAll();
+}
+
+async function updatePriority(id, newPriority) {
+    const staffId = currentComplaints.find(c => c.id === id).staff_id;
+    const res = await fetch(`/api/complaints/${id}/assign`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ staff_id: staffId, priority: newPriority })
+    });
+    if((await res.json()).success) loadAll();
+}
+
+function getStatusClass(status) {
+    if(status === 'Pending') return 'bg-warning text-dark';
+    if(status === 'In Progress') return 'bg-info';
+    if(status === 'Resolved') return 'bg-success';
+    if(status === 'Rejected') return 'bg-danger';
+}
+
+async function assignStaff(id, staffId) {
+    if(!staffId) return;
+    const priority = currentComplaints.find(c => c.id === id).priority;
+    const res = await fetch(`/api/complaints/${id}/assign`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ staff_id: staffId, priority: priority })
+    });
+    if((await res.json()).success) loadAll();
+}
+
+async function resolveComplaint(id) {
+    const res = await fetch(`/api/complaints/${id}/resolve`, {
+        method: 'PUT',
+        headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if((await res.json()).success) loadAll();
+}
+
+function openRejectModal(id) {
+    rejectId = id;
+    new bootstrap.Modal(document.getElementById("rejectModal")).show();
+}
+
+async function confirmReject() {
+    const reason = document.getElementById("rejectReason").value;
+    if(!reason) return alert("Enter reason");
+    const res = await fetch(`/api/complaints/${rejectId}/reject`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ rejection_reason: reason })
+    });
+    if((await res.json()).success) {
+        bootstrap.Modal.getInstance(document.getElementById("rejectModal")).hide();
+        loadAll();
+    }
+}
+
+loadAll();
+
+const loadNotifications = async () => {
+    try {
+        const res = await fetch('/api/notifications', {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await res.json();
+        if(data.success) {
+            const items = document.getElementById('notifItems');
+            const unread = data.notifications.filter(n => !n.is_read).length;
+            
+            if(unread > 0) {
+                document.getElementById('notifBadge').innerText = unread;
+                document.getElementById('notifBadge').style.display = 'block';
+            } else {
+                document.getElementById('notifBadge').style.display = 'none';
+            }
+
+            if(data.notifications.length === 0) {
+                items.innerHTML = '<li class="text-center p-3 text-muted">No notifications</li>';
+                return;
+            }
+
+            items.innerHTML = data.notifications.map(n => `
+                <li class="p-2 border-bottom ${!n.is_read ? 'bg-light font-weight-bold' : ''}">
+                    <div style="font-size: 0.85rem;">${n.message}</div>
+                    <small class="text-muted" style="font-size: 0.7rem;">${new Date(n.createdAt).toLocaleString()}</small>
+                </li>
+            `).join('');
+        }
+    } catch (err) { console.error(err); }
+};
+
+const markAllNotificationsRead = async () => {
+    try {
+        const res = await fetch('/api/notifications', {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await res.json();
+        if(data.success) {
+            for(let n of data.notifications) {
+                if(!n.is_read) {
+                    await fetch(`/api/notifications/${n.id}`, {
+                        method: 'PUT',
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    });
+                }
+            }
+            setTimeout(loadNotifications, 500);
+        }
+    } catch (err) { console.error(err); }
+};
+
+loadNotifications();
+setInterval(loadNotifications, 120000);
+</script>
+
+</body>
+</html>

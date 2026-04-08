@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Admin Dashboard</title>
+
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
+
+<style>
+body { margin:0; font-family:'Poppins'; background:#f4f6f9; }
+
+/* Sidebar */
+.sidebar {
+    width:240px; height:100vh; position:fixed;
+    background:#0d2c54; color:white;
+}
+.sidebar h4 { padding:20px; }
+.sidebar a {
+    display:block; padding:12px 20px;
+    color:#ddd; text-decoration:none; cursor:pointer;
+}
+.sidebar a:hover { background:#1c3d6e; }
+
+/* Main */
+.main { margin-left:240px; padding:20px; }
+
+/* Cards */
+.card-box { padding:20px; border-radius:10px; color:white; }
+.blue{background:#4e73df;}
+.orange{background:#f6c23e;color:black;}
+.lightblue{background:#36b9cc;}
+.green{background:#1cc88a;}
+</style>
+</head>
+
+<body>
+
+<!-- SIDEBAR -->
+<div class="sidebar">
+<h4>HCMTS Admin</h4>
+<a onclick="showSection('dashboard')">Dashboard</a>
+<a onclick="showSection('users')">Users</a>
+<a onclick="showSection('complaints')">Complaints</a>
+<a onclick="showSection('notify')">Send Notifications</a>
+<a onclick="logout()">Logout</a>
+</div>
+
+<!-- MAIN -->
+<div class="main">
+
+<!-- HEADER -->
+<div class="d-flex justify-content-between align-items-center mb-4">
+<h3>Admin Panel</h3>
+<div>
+<span id="adminNameDisplay" class="badge bg-dark"></span>
+<button class="btn btn-sm btn-danger ms-2" onclick="logout()">Logout</button>
+</div>
+</div>
+
+<!-- DASHBOARD -->
+<div id="dashboard">
+<h4>Stats Overview</h4>
+<div class="row mt-3">
+<div class="col-md-3"><div class="card-box blue"><h6>Total</h6><h3 id="totalStats">0</h3></div></div>
+<div class="col-md-3"><div class="card-box orange"><h6>Pending</h6><h3 id="pendingStats">0</h3></div></div>
+<div class="col-md-3"><div class="card-box lightblue"><h6>In Progress</h6><h3 id="progressStats">0</h3></div></div>
+<div class="col-md-3"><div class="card-box green"><h6>Resolved</h6><h3 id="resolvedStats">0</h3></div></div>
+</div>
+</div>
+
+<!-- USERS LIST -->
+<div id="users" class="section" style="display:none;">
+<h5>Manage Users</h5>
+<div class="bg-white p-3 rounded mt-3">
+<table class="table">
+<thead>
+<tr>
+<th>ID</th>
+<th>Username</th>
+<th>Role</th>
+<th>Action</th>
+</tr>
+</thead>
+<tbody id="userTable"></tbody>
+</table>
+</div>
+</div>
+
+<!-- COMPLAINTS LIST -->
+<div id="complaints" class="section" style="display:none;">
+    <div class="d-flex justify-content-between">
+        <h5>All Complaints</h5>
+        <div>
+            <a id="csvDownload" href="#" class="btn btn-sm btn-success"><i class="fa fa-download"></i> Download CSV Report</a>
+            <a id="pdfDownload" href="#" class="btn btn-sm btn-danger ms-2"><i class="fa fa-file-pdf"></i> Download PDF Report</a>
+        </div>
+    </div>
+    
+    <div class="bg-white p-3 rounded mt-3">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Date</th>
+                    <th>Student</th>
+                    <th>Block</th>
+                    <th>Room</th>
+                    <th>Issue</th>
+                    <th>Description</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody id="complaintTable"></tbody>
+        </table>
+    </div>
+</div>
+
+<!-- NOTIFICATIONS (New Section) -->
+<div id="notify" class="section" style="display:none;">
+    <h5>Send Notifications</h5>
+    <div class="card p-3 mt-3">
+        <h6>Broadcast Message (All Users)</h6>
+        <div class="input-group">
+            <input type="text" id="broadcastMsg" class="form-control" placeholder="Enter message to all users...">
+            <button class="btn btn-primary" onclick="sendBroadcast()">Send All</button>
+        </div>
+        
+        <hr>
+        
+        <h6>Send to Specific User</h6>
+        <div class="row">
+            <div class="col-md-4">
+                <input type="number" id="targetUserId" class="form-control" placeholder="User ID">
+            </div>
+            <div class="col-md-8">
+                <div class="input-group">
+                    <input type="text" id="targetMsg" class="form-control" placeholder="Message...">
+                    <button class="btn btn-dark" onclick="sendToUser()">Send Individual</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+</div>
+
+<script>
+const token = localStorage.getItem('token');
+const user = JSON.parse(localStorage.getItem('user'));
+
+if(!token || user.role !== 'admin') { window.location.href = '/'; }
+
+document.getElementById('adminNameDisplay').innerText = user.username;
+document.getElementById('csvDownload').href = `/api/reports/csv?token=${token}`;
+document.getElementById('pdfDownload').href = `/api/reports/pdf?token=${token}`;
+
+function logout() { localStorage.clear(); window.location.href = '/'; }
+
+function showSection(id) {
+    document.querySelectorAll("#dashboard,#users,#complaints,#notify").forEach(d => d.style.display = "none");
+    document.getElementById(id).style.display = "block";
+    if(id === 'users') loadUsers();
+    if(id === 'complaints') loadComplaints();
+}
+
+async function loadStats() {
+    const res = await fetch('/api/complaints', { headers: { 'Authorization': `Bearer ${token}` } });
+    const data = await res.json();
+    if(data.success) {
+        const complaints = data.complaints;
+        document.getElementById('totalStats').innerText = complaints.length;
+        document.getElementById('pendingStats').innerText = complaints.filter(c => c.status === 'Pending').length;
+        document.getElementById('progressStats').innerText = complaints.filter(c => c.status === 'In Progress').length;
+        document.getElementById('resolvedStats').innerText = complaints.filter(c => c.status === 'Resolved').length;
+    }
+}
+
+async function loadUsers() {
+    const res = await fetch('/api/users', { headers: { 'Authorization': `Bearer ${token}` } });
+    const data = await res.json();
+    if(data.success) {
+        const table = document.getElementById('userTable');
+        table.innerHTML = "";
+        data.users.forEach(u => {
+            table.innerHTML += `
+            <tr>
+                <td>${u.id}</td>
+                <td>${u.username}</td>
+                <td>${u.role} (ID: ${u.id})</td>
+                <td>
+                    <button class="btn btn-sm btn-danger" onclick="deleteUser(${u.id})">Delete</button>
+                </td>
+            </tr>`;
+        });
+    }
+}
+
+async function loadComplaints() {
+    const res = await fetch('/api/complaints', { headers: { 'Authorization': `Bearer ${token}` } });
+    const data = await res.json();
+    if(data.success) {
+        const table = document.getElementById('complaintTable');
+        table.innerHTML = "";
+        data.complaints.forEach(c => {
+            const date = new Date(c.createdAt).toLocaleDateString();
+            const snippet = c.description.substring(0, 30) + (c.description.length > 30 ? '...' : '');
+            table.innerHTML += `
+            <tr>
+                <td>${c.id}</td>
+                <td>${date}</td>
+                <td>${c.Student ? c.Student.name || c.Student.username : 'Unknown'}</td>
+                <td>${c.block}</td>
+                <td>${c.room_no_no}</td>
+                <td>${c.complaint_type}</td>
+                <td><small>${snippet}</small></td>
+                <td><span class="badge ${getStatusClass(c.status)}">${c.status}</span></td>
+            </tr>`;
+        });
+    }
+}
+
+function getStatusClass(status) {
+    if(status === 'Pending') return 'bg-warning text-dark';
+    if(status === 'In Progress') return 'bg-info';
+    if(status === 'Resolved') return 'bg-success';
+    if(status === 'Rejected') return 'bg-danger';
+}
+
+async function sendBroadcast() {
+    const msg = document.getElementById('broadcastMsg').value;
+    if(!msg) return alert('Enter message');
+    const res = await fetch('/api/notifications/admin/broadcast', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ message: msg })
+    });
+    const result = await res.json();
+    if(result.success) { alert(result.message); document.getElementById('broadcastMsg').value = ''; }
+}
+
+async function sendToUser() {
+    const id = document.getElementById('targetUserId').value;
+    const msg = document.getElementById('targetMsg').value;
+    if(!id || !msg) return alert('Enter ID and message');
+    const res = await fetch('/api/notifications/admin/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ user_id: id, message: msg })
+    });
+    if((await res.json()).success) { alert('Notification sent'); document.getElementById('targetMsg').value = ''; }
+}
+
+async function deleteUser(id) {
+    if(!confirm('Are you sure?')) return;
+    const res = await fetch(`/api/users/${id}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if((await res.json()).success) loadUsers();
+}
+
+loadStats();
+</script>
+
+</body>
+</html>
